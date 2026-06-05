@@ -43,7 +43,7 @@
             font-size: 14px;
         }
 
-        .form-card {
+        .form-card, .dashboard-card {
             background: white;
             padding: 30px;
             border-radius: 15px;
@@ -51,7 +51,7 @@
             margin-bottom: 25px;
         }
 
-        .form-card h2 {
+        .form-card h2, .dashboard-card h2 {
             color: #333;
             margin-bottom: 20px;
             font-size: 20px;
@@ -117,9 +117,17 @@
             opacity: 0.9;
         }
 
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
+        .btn-secondary {
+            background: #6c757d;
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 13px;
         }
 
         .dashboard {
@@ -235,10 +243,7 @@
             display: flex;
             gap: 10px;
             margin-top: 15px;
-        }
-
-        .btn-secondary {
-            background: #6c757d;
+            flex-wrap: wrap;
         }
 
         .alert {
@@ -259,6 +264,50 @@
             color: #3c3;
             border: 1px solid #cfc;
         }
+
+        /* Lista de reportes */
+        .reportes-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .reporte-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            display: grid;
+            grid-template-columns: 1fr auto;
+            align-items: center;
+            gap: 15px;
+            transition: transform 0.2s;
+        }
+
+        .reporte-item:hover {
+            transform: translateX(5px);
+            background: #eef0f3;
+        }
+
+        .reporte-info h4 {
+            color: #333;
+            margin-bottom: 4px;
+            font-size: 15px;
+        }
+
+        .reporte-info p {
+            color: #777;
+            font-size: 12px;
+        }
+
+        .reporte-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
     </style>
 </head>
 <body>
@@ -271,9 +320,11 @@
 
         <div id="alertContainer"></div>
 
+        <!-- FORMULARIO -->
         <div class="form-card">
-            <h2>📝 Ingresar Datos del Reporte</h2>
+            <h2 id="formTitle">📝 Nuevo Reporte</h2>
             <form id="reporteForm">
+                <input type="hidden" id="reporte_id" value="">
                 <div class="form-grid">
                     <div class="form-group full">
                         <label>Título del Reporte</label>
@@ -295,15 +346,31 @@
                         <label>🟢 Finalizados</label>
                         <input type="number" id="finalizados" min="0" value="0" required>
                     </div>
+                    <div class="form-group">
+                        <label>⚪ Sin Ejecutar</label>
+                        <input type="number" id="sin_ejecutar" min="0" value="0" required>
+                    </div>
                     <div class="form-group full">
                         <label>💬 Mensaje / Comentarios (opcional)</label>
                         <textarea id="mensaje" placeholder="Escribe aquí cualquier observación, comentario o nota sobre el reporte..."></textarea>
                     </div>
                 </div>
-                <button type="submit" class="btn" id="btnGenerar">📊 Generar Dashboard</button>
+                <div class="actions">
+                    <button type="submit" class="btn" id="btnSubmit">📊 Generar Dashboard</button>
+                    <button type="button" class="btn btn-secondary" onclick="limpiarFormulario()">🔄 Limpiar</button>
+                </div>
             </form>
         </div>
 
+        <!-- HISTORIAL DE REPORTES -->
+        <div class="dashboard-card">
+            <h2>📚 Historial de Reportes</h2>
+            <div id="reportesList" class="reportes-list">
+                <div class="empty-state">Cargando reportes...</div>
+            </div>
+        </div>
+
+        <!-- DASHBOARD -->
         <div class="dashboard" id="dashboard">
             
             <div class="message-card" id="messageCard" style="display:none;">
@@ -329,7 +396,7 @@
             </div>
 
             <div class="actions">
-                <button class="btn btn-secondary" onclick="nuevoReporte()">➕ Nuevo Reporte</button>
+                <button class="btn btn-secondary" onclick="limpiarFormulario()">➕ Nuevo Reporte</button>
                 <button class="btn" onclick="window.print()">🖨️ Imprimir / PDF</button>
             </div>
         </div>
@@ -338,10 +405,12 @@
     <script>
         let pieChart = null;
         let barChart = null;
+        let editando = false;
 
         window.onload = function() {
             actualizarFecha();
             setInterval(actualizarFecha, 1000);
+            cargarReportes();
         };
 
         function actualizarFecha() {
@@ -359,45 +428,184 @@
                 '📅 ' + ahora.toLocaleDateString('es-ES', opciones);
         }
 
+        // Cargar historial de reportes
+        async function cargarReportes() {
+            try {
+                const response = await fetch('http://localhost:5000/api/reportes');
+                const reportes = await response.json();
+                
+                const list = document.getElementById('reportesList');
+                
+                if (reportes.length === 0) {
+                    list.innerHTML = '<div class="empty-state">📭 No hay reportes guardados. Crea el primero arriba.</div>';
+                    return;
+                }
+                
+                list.innerHTML = reportes.map(r => `
+                    <div class="reporte-item">
+                        <div class="reporte-info">
+                            <h4>${r.titulo}</h4>
+                            <p>📅 ${r.fecha_generacion} | 📊 Total: ${r.total_casos} | 🟢 Finalizados: ${r.finalizados} (${r.porcentaje_finalizados}%)</p>
+                            ${r.mensaje ? `<p style="margin-top:4px;color:#555;">💬 ${r.mensaje.substring(0, 80)}${r.mensaje.length > 80 ? '...' : ''}</p>` : ''}
+                        </div>
+                        <div class="reporte-actions">
+                            <button class="btn btn-sm" onclick="verReporte(${r.id})">👁️ Ver</button>
+                            <button class="btn btn-sm btn-secondary" onclick="editarReporte(${r.id})">✏️ Editar</button>
+                            <button class="btn btn-sm btn-danger" onclick="eliminarReporte(${r.id})">🗑️</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error al cargar reportes:', error);
+                document.getElementById('reportesList').innerHTML = 
+                    '<div class="empty-state">❌ Error al cargar reportes. Verifica que el servidor esté activo.</div>';
+            }
+        }
+
+        // Ver un reporte del historial
+        async function verReporte(id) {
+            try {
+                const response = await fetch(`http://localhost:5000/api/reporte/${id}`);
+                const reporte = await response.json();
+                
+                if (response.ok) {
+                    // Reconstruir objeto reporte para mostrarDashboard
+                    const reporteCompleto = {
+                        id: reporte.id,
+                        titulo: reporte.titulo,
+                        fecha_generacion: reporte.fecha_generacion,
+                        total_casos: reporte.total_casos,
+                        bloqueados: reporte.bloqueados,
+                        en_curso: reporte.en_curso,
+                        finalizados: reporte.finalizados,
+                        sin_ejecutar: reporte.sin_ejecutar,
+                        mensaje: reporte.mensaje,
+                        porcentajes: {
+                            bloqueados: reporte.porcentaje_bloqueados,
+                            en_curso: reporte.porcentaje_en_curso,
+                            finalizados: reporte.porcentaje_finalizados,
+                            sin_ejecutar: reporte.porcentaje_sin_ejecutar
+                        }
+                    };
+                    mostrarDashboard(reporteCompleto);
+                } else {
+                    mostrarAlerta('error', '❌ ' + reporte.error);
+                }
+            } catch (error) {
+                mostrarAlerta('error', '❌ Error al cargar el reporte');
+            }
+        }
+
+        // Editar un reporte
+        async function editarReporte(id) {
+            try {
+                const response = await fetch(`http://localhost:5000/api/reporte/${id}`);
+                const reporte = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('reporte_id').value = reporte.id;
+                    document.getElementById('titulo').value = reporte.titulo;
+                    document.getElementById('total_casos').value = reporte.total_casos;
+                    document.getElementById('bloqueados').value = reporte.bloqueados;
+                    document.getElementById('en_curso').value = reporte.en_curso;
+                    document.getElementById('finalizados').value = reporte.finalizados;
+                    document.getElementById('sin_ejecutar').value = reporte.sin_ejecutar;
+                    document.getElementById('mensaje').value = reporte.mensaje || '';
+                    
+                    document.getElementById('formTitle').textContent = '✏️ Editando Reporte #' + id;
+                    document.getElementById('btnSubmit').textContent = '💾 Actualizar Reporte';
+                    editando = true;
+                    
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+            } catch (error) {
+                mostrarAlerta('error', '❌ Error al cargar el reporte');
+            }
+        }
+
+        // Eliminar un reporte
+        async function eliminarReporte(id) {
+            if (!confirm('¿Estás seguro de eliminar este reporte?')) return;
+            
+            try {
+                const response = await fetch(`http://localhost:5000/api/reporte/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    mostrarAlerta('success', '✅ Reporte eliminado');
+                    cargarReportes();
+                } else {
+                    const error = await response.json();
+                    mostrarAlerta('error', '❌ ' + error.error);
+                }
+            } catch (error) {
+                mostrarAlerta('error', '❌ Error al eliminar');
+            }
+        }
+
+        // Enviar formulario (crear o actualizar)
         document.getElementById('reporteForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
+            const reporteId = document.getElementById('reporte_id').value;
             const datos = {
                 titulo: document.getElementById('titulo').value,
                 total_casos: document.getElementById('total_casos').value,
                 bloqueados: document.getElementById('bloqueados').value,
                 en_curso: document.getElementById('en_curso').value,
                 finalizados: document.getElementById('finalizados').value,
+                sin_ejecutar: document.getElementById('sin_ejecutar').value,
                 mensaje: document.getElementById('mensaje').value
             };
 
-            const suma = parseInt(datos.bloqueados) + parseInt(datos.en_curso) + parseInt(datos.finalizados);
+            const suma = parseInt(datos.bloqueados) + parseInt(datos.en_curso) + 
+                        parseInt(datos.finalizados) + parseInt(datos.sin_ejecutar);
             if (suma > parseInt(datos.total_casos)) {
                 mostrarAlerta('error', `❌ La suma (${suma}) supera el total de casos (${datos.total_casos})`);
                 return;
             }
 
             try {
-                const response = await fetch('http://localhost:5000/api/reporte', {
-                    method: 'POST',
+                const url = editando && reporteId 
+                    ? `http://localhost:5000/api/reporte/${reporteId}`
+                    : 'http://localhost:5000/api/reporte';
+                const method = editando && reporteId ? 'PUT' : 'POST';
+                
+                const response = await fetch(url, {
+                    method: method,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(datos)
                 });
 
                 if (!response.ok) {
                     const error = await response.json();
-                    mostrarAlerta('error', '❌ ' + (error.error || 'Error al generar reporte'));
+                    mostrarAlerta('error', '❌ ' + (error.error || 'Error'));
                     return;
                 }
 
                 const reporte = await response.json();
                 mostrarDashboard(reporte);
-                mostrarAlerta('success', '✅ Reporte generado exitosamente');
+                mostrarAlerta('success', editando ? '✅ Reporte actualizado' : '✅ Reporte guardado');
+                cargarReportes();
+                
+                if (!editando) limpiarFormulario();
                 
             } catch (error) {
-                mostrarAlerta('error', '❌ Error de conexión con el servidor. ¿Está ejecutándose Python?');
+                mostrarAlerta('error', '❌ Error de conexión: ' + error.message);
             }
         });
+
+        function limpiarFormulario() {
+            document.getElementById('reporteForm').reset();
+            document.getElementById('reporte_id').value = '';
+            document.getElementById('titulo').value = 'Reporte de Avance de Testing';
+            document.getElementById('formTitle').textContent = '📝 Nuevo Reporte';
+            document.getElementById('btnSubmit').textContent = '📊 Generar Dashboard';
+            editando = false;
+            document.getElementById('dashboard').classList.remove('active');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
 
         function mostrarAlerta(tipo, mensaje) {
             const container = document.getElementById('alertContainer');
@@ -437,7 +645,6 @@
                 </div>
             `;
 
-            // Gráfico de pastel
             const pieCtx = document.getElementById('pieChart').getContext('2d');
             if (pieChart) pieChart.destroy();
             pieChart = new Chart(pieCtx, {
@@ -469,7 +676,6 @@
                 }
             });
 
-            // Gráfico de barras
             const barCtx = document.getElementById('barChart').getContext('2d');
             if (barChart) barChart.destroy();
             barChart = new Chart(barCtx, {
@@ -502,13 +708,6 @@
 
             document.getElementById('dashboard').classList.add('active');
             document.getElementById('dashboard').scrollIntoView({ behavior: 'smooth' });
-        }
-
-        function nuevoReporte() {
-            document.getElementById('reporteForm').reset();
-            document.getElementById('titulo').value = 'Reporte de Avance de Testing';
-            document.getElementById('dashboard').classList.remove('active');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
     </script>
 </body>
